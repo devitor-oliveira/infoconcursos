@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.infoconcursos.desktop",
+  "productName": "InfoConcursos",
+  "directories": {
+    "buildResources": "resources",
+    "output": "dist"
+  },
+  "files": [
+    "out/**/*",
+    "node_modules/**/*",
+    "package.json"
+  ],
+  "win": {
+    "executableName": "InfoConcursos",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  }
+}

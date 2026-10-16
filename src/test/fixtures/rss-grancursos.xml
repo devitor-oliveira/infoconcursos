@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Blog Gran Cursos Online</title>
+    <link>https://blog.grancursosonline.com.br</link>
+    <description>Notícias sobre concursos públicos</description>
+    <item>
+      <title>Concurso Correios 2025: edital confirmado e cronograma em elaboração</title>
+      <link>https://blog.grancursosonline.com.br/concurso-correios-2025/</link>
+      <pubDate>Thu, 16 Oct 2025 14:00:00 +0000</pubDate>
+      <description><![CDATA[O concurso dos Correios para nível médio e superior está confirmado para 2025.]]></description>
+      <category>Correios</category>
+      <category>Administrativo</category>
+    </item>
+    <item>
+      <title>Concurso TRF 1 2025: banca FGV contratada para novo certame</title>
+      <link>https://blog.grancursosonline.com.br/concurso-trf-1-2025/</link>
+      <pubDate>Wed, 15 Oct 2025 10:30:00 +0000</pubDate>
+      <description><![CDATA[Tribunal Regional Federal da 1a Regiao contrata banca FGV para novo edital.]]></description>
+      <category>TRF 1</category>
+      <category>Tribunais</category>
+    </item>
+  </channel>
+</rss>
