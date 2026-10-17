@@ -5,6 +5,37 @@ import { initDatabase, closeDatabase } from './database'
 import { registerAllIpcHandlers } from './ipc/handlers'
 import { applyElectronSessionProxy } from './modules/privacy/network-privacy'
 
+let mainWindow: BrowserWindow | null = null
+
+// 1. Single Instance Lock: Prevenção estrita de processos duplicados concorrentes no SO
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!gotSingleInstanceLock) {
+  // Encerra imediatamente a segunda instância sem abrir janelas ou tocar no SQLite
+  app.exit(0)
+} else {
+  app.on('second-instance', () => {
+    // Foca na janela existente se o usuário tentar abrir o app novamente
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+}
+
+// 2. Manipuladores Globais de Falha no Processo (GAP 05 do dev-agent.md)
+process.on('uncaughtException', (err) => {
+  console.error('[Main] Exceção crítica não tratada:', err)
+  try {
+    closeDatabase()
+  } catch {}
+  app.exit(1)
+})
+
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Main] Rejeição de Promise não capturada:', reason)
+})
+
 function isTrustedLocalNavigationUrl(navigationUrl: string): boolean {
   try {
     const parsed = new URL(navigationUrl)
@@ -39,8 +70,8 @@ function enforceExternalOrBlockNavigation(event: Electron.Event, navigationUrl: 
   }
 }
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+function createWindow(): BrowserWindow {
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 1024,
@@ -59,7 +90,11 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
+  })
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -83,6 +118,8 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return mainWindow
 }
 
 // Proteção global em nível de processo contra anexação de <webview> ou navegações não autorizadas (Checklist #12 & #13)
@@ -131,9 +168,23 @@ app.whenReady().then(async () => {
   })
 })
 
+// 3. Garantia de Persistência e Encerramento Atômico de Processos (Prevenção de Dangling Processes)
+app.on('before-quit', () => {
+  try {
+    closeDatabase()
+  } catch (err) {
+    console.error('[Main] Erro ao persistir banco no before-quit:', err)
+  }
+})
+
 app.on('window-all-closed', () => {
-  closeDatabase()
+  try {
+    closeDatabase()
+  } catch (err) {
+    console.error('[Main] Erro ao persistir banco no window-all-closed:', err)
+  }
   if (process.platform !== 'darwin') {
-    app.quit()
+    // app.exit(0) encerra imediatamente o processo e cancela qualquer socket de rede pendente
+    app.exit(0)
   }
 })
