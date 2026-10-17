@@ -4,6 +4,7 @@ import { ConcursoArea, ConcursoStatus } from '../../../shared/types/concurso'
 import { isResultCurrent } from '../search/query-sanitizer'
 import { fetchHtmlWithSafety } from '../search/http-client'
 import { generateCanonicalId } from '../search/id-generator'
+import { decodeGoogleNewsUrl } from '../search/url-resolver'
 
 export function parseSafeIsoDate(dateStr?: string | null): string {
   if (!dateStr) return new Date().toISOString()
@@ -225,9 +226,14 @@ export function parseGoogleNewsRssXml(xml: string, defaultTerm?: string): NewsIt
 
   $('item').each((_, el) => {
     const title = $(el).find('title').first().text().replace(/\s+/g, ' ').trim()
-    const link = $(el).find('link').first().text().trim()
+    const rawLink = $(el).find('link').first().text().trim()
     const pubDate = parseSafeIsoDate($(el).find('pubDate').first().text().trim())
-    const source = $(el).find('source').first().text().trim() || 'Portal de Notícias'
+    const sourceEl = $(el).find('source').first()
+    const source = sourceEl.text().trim() || 'Portal de Notícias'
+    const sourceUrl = sourceEl.attr('url') || ''
+
+    // Decodifica a URL real para evitar o token opaco do Google News que gera 404
+    const link = decodeGoogleNewsUrl(rawLink, sourceUrl)
 
     if (!title || !link || !isResultCurrent(title, source, pubDate)) return
 

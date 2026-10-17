@@ -6,6 +6,7 @@ import { ConcursoDossier } from '../../../shared/types/concurso'
 import { MonitoringItem } from '../../../shared/types/news'
 import { generateConcursoDossiers } from '../dossier/dossier-generator'
 import { detectDossierChanges } from './change-detector'
+import { anonymizeDossierForStorage, anonymizeText } from '../../../shared/utils/anonymizer'
 
 export function listMonitoredConcursos(): MonitoringItem[] {
   const db = getDb()
@@ -25,10 +26,11 @@ export function listMonitoredConcursos(): MonitoringItem[] {
   }))
 }
 
-export function toggleMonitorConcurso(dossier: ConcursoDossier): {
+export function toggleMonitorConcurso(rawDossier: ConcursoDossier): {
   monitored: boolean
   items: MonitoringItem[]
 } {
+  const dossier = anonymizeDossierForStorage(rawDossier)
   const db = getDb()
   const existing = db
     .select()
@@ -84,7 +86,7 @@ export async function checkMonitoredUpdatesNow(options: { skipNetwork?: boolean 
     )
     if (dossiers.length === 0) continue
 
-    const freshDossier = dossiers[0]
+    const freshDossier = anonymizeDossierForStorage(dossiers[0])
     let prevSnapshot: ConcursoDossier | null = null
     try {
       prevSnapshot = JSON.parse(item.dossierSnapshotJson) as ConcursoDossier
@@ -110,16 +112,18 @@ export async function checkMonitoredUpdatesNow(options: { skipNetwork?: boolean 
       }
     }
 
+    const rawDesc =
+      change.summary ||
+      item.descricaoNovidade ||
+      `Verificado em ${new Date().toLocaleTimeString('pt-BR')} — Informações atualizadas.`
+
     db.update(monitoramentosTable)
       .set({
         statusAtual: freshDossier.status,
         statusLabel: freshDossier.statusLabel,
         ultimaVerificacao: new Date().toISOString(),
         possuiNovidade: change.hasChanged || item.possuiNovidade,
-        descricaoNovidade:
-          change.summary ||
-          item.descricaoNovidade ||
-          `Verificado em ${new Date().toLocaleTimeString('pt-BR')} — Informações atualizadas.`,
+        descricaoNovidade: anonymizeText(rawDesc, 'DATABASE_PERSISTENCE'),
         dossierSnapshotJson: JSON.stringify(freshDossier)
       })
       .where(eq(monitoramentosTable.id, item.id))

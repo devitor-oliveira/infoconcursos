@@ -2,14 +2,12 @@ import * as cheerio from 'cheerio'
 import { RawSearchResult, SearchFilter } from '../../../shared/types/search'
 import { buildSanitizedSearchQuery, isResultCurrent } from './query-sanitizer'
 import { resolveCanonicalUrl, extractDomainName } from './url-resolver'
-
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0'
-]
+import { fetchHtmlWithSafety } from './http-client'
+import { anonymizeText } from '../../../shared/utils/anonymizer'
 
 /**
- * Realiza o parsing do HTML do DuckDuckGo HTML/Lite e filtra resultados obsoletos.
+ * Realiza o parsing do HTML do DuckDuckGo HTML/Lite, filtra resultados obsoletos
+ * e anonimiza eventuais dados pessoais presentes em snippets (LGPD).
  */
 export function parseDuckDuckGoHtml(html: string): RawSearchResult[] {
   const $ = cheerio.load(html)
@@ -22,8 +20,8 @@ export function parseDuckDuckGoHtml(html: string): RawSearchResult[] {
     const snippetEl = $(element).find('.result__snippet, .result-snippet').first()
     const rawHref = titleEl.attr('href') || ''
 
-    const title = titleEl.text().replace(/\s+/g, ' ').trim()
-    const snippet = snippetEl.text().replace(/\s+/g, ' ').trim()
+    const title = anonymizeText(titleEl.text().replace(/\s+/g, ' ').trim(), 'SCRAPED_TEXT')
+    const snippet = anonymizeText(snippetEl.text().replace(/\s+/g, ' ').trim(), 'SCRAPED_TEXT')
     const url = resolveCanonicalUrl(rawHref)
 
     if (!title || !url || seenUrls.has(url)) return
@@ -43,10 +41,13 @@ export function parseDuckDuckGoHtml(html: string): RawSearchResult[] {
   // Fallback para tabela lite.duckduckgo.com/lite/ se necessário
   if (results.length === 0) {
     $('a.result-link').each((_, el) => {
-      const title = $(el).text().replace(/\s+/g, ' ').trim()
+      const title = anonymizeText($(el).text().replace(/\s+/g, ' ').trim(), 'SCRAPED_TEXT')
       const rawHref = $(el).attr('href') || ''
       const url = resolveCanonicalUrl(rawHref)
-      const snippet = $(el).closest('tr').next('tr').find('.result-snippet').text().replace(/\s+/g, ' ').trim()
+      const snippet = anonymizeText(
+        $(el).closest('tr').next('tr').find('.result-snippet').text().replace(/\s+/g, ' ').trim(),
+        'SCRAPED_TEXT'
+      )
 
       if (title && url && !seenUrls.has(url) && isResultCurrent(title, snippet)) {
         seenUrls.add(url)
@@ -64,13 +65,11 @@ export function parseDuckDuckGoHtml(html: string): RawSearchResult[] {
 }
 
 /**
- * Executa a busca direta no DuckDuckGo HTML sem necessidade de chaves de API,
- * com retentativa automática e timeout de 6 segundos.
+ * Executa uma consulta individual contra os endpoints HTML e Lite do DuckDuckGo.
  */
-export async function searchDuckDuckGoLite(filter: SearchFilter): Promise<RawSearchResult[]> {
-  const { internalQuery } = buildSanitizedSearchQuery(filter)
+async function executeDuckDuckGoRequest(query: string, timeoutMs = 6000): Promise<RawSearchResult[]> {
   const encodedQuery = new URLSearchParams({
-    q: internalQuery,
+    q: query,
     kl: 'br-pt'
   }).toString()
 
@@ -80,33 +79,53 @@ export async function searchDuckDuckGoLite(filter: SearchFilter): Promise<RawSea
   ]
 
   for (let attempt = 0; attempt < endpoints.length; attempt++) {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 6000)
+    const res = await fetchHtmlWithSafety(endpoints[attempt], { timeoutMs })
+    if (!res) continue
 
-    try {
-      const response = await fetch(endpoints[attempt], {
-        method: 'GET',
-        headers: {
-          'User-Agent': USER_AGENTS[attempt % USER_AGENTS.length],
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
-        },
-        signal: controller.signal
-      })
-
-      clearTimeout(timeoutId)
-
-      if (!response.ok) continue
-
-      const html = await response.text()
-      const parsed = parseDuckDuckGoHtml(html)
-      if (parsed.length > 0) {
-        return parsed.slice(0, 12)
-      }
-    } catch {
-      clearTimeout(timeoutId)
+    const parsed = parseDuckDuckGoHtml(res.html)
+    if (parsed.length > 0) {
+      return parsed
     }
   }
 
   return []
+}
+
+/**
+ * Executa a busca direta no DuckDuckGo HTML sem necessidade de chaves de API,
+ * combinando a query principal com fallback estruturado em Dorks de Bancas/Gov e Portais.
+ */
+export async function searchDuckDuckGoLite(filter: SearchFilter): Promise<RawSearchResult[]> {
+  const { internalQuery, bancasDorkQuery, portaisDorkQuery, targetContext } =
+    buildSanitizedSearchQuery(filter)
+
+  const aggregated: RawSearchResult[] = []
+  const seenUrls = new Set<string>()
+
+  const appendUnique = (items: RawSearchResult[]): void => {
+    for (const item of items) {
+      if (!seenUrls.has(item.url)) {
+        seenUrls.add(item.url)
+        aggregated.push(item)
+      }
+    }
+  }
+
+  // 1. Consulta primária com âncoras temporais e filtros de exclusão
+  const primaryResults = await executeDuckDuckGoRequest(internalQuery, 6000)
+  appendUnique(primaryResults)
+
+  // 2. Enriquecimento com Dork de Bancas e Diários Oficiais (.gov.br / .jus.br) quando busca for específica ou escassa
+  if (bancasDorkQuery && (aggregated.length < 4 || targetContext === 'SPECIFIC_CONCURSO')) {
+    const bancaResults = await executeDuckDuckGoRequest(bancasDorkQuery, 5000)
+    appendUnique(bancaResults)
+  }
+
+  // 3. Contingência em Portais Especializados caso nenhuma das etapas anteriores retorne resultados
+  if (portaisDorkQuery && aggregated.length === 0) {
+    const portalResults = await executeDuckDuckGoRequest(portaisDorkQuery, 5000)
+    appendUnique(portalResults)
+  }
+
+  return aggregated.slice(0, 12)
 }

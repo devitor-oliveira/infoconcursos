@@ -24,5 +24,8 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "src/test/**/*"
+  ],
+  "exclude": [
+    "src/test/ui/**/*"
   ]
 }

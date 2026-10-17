@@ -4,6 +4,7 @@ import {
   Search,
   Sparkles,
   Settings,
+  ShieldCheck,
   Pin,
   PinOff,
   ChevronUp,
@@ -16,6 +17,7 @@ import { NewsPage } from './pages/NewsPage'
 import { MonitoringPage } from './pages/MonitoringPage'
 import { DossierPage } from './pages/DossierPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage'
 import { Button, Heading, Text } from './components/ds'
 import { SUGESTOES_RAPIDAS } from '../../shared/constants/areas'
 
@@ -31,12 +33,14 @@ export function App(): React.JSX.Element {
     isLoadingNews,
     isCheckingUpdates,
     lastUpdateMessage,
+    searchValidationWarning,
     searchAtualizadoEm,
     searchFromCache,
     newsAtualizadoEm,
     newsFromCache,
     setActiveTab,
     setFilter,
+    setSearchValidationWarning,
     openDossierPage,
     goBackFromDossier,
     executeSearch,
@@ -104,9 +108,11 @@ export function App(): React.JSX.Element {
         <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 h-full flex items-center justify-between">
           {/* Lado Esquerdo: Identidade Editorial no Canto Superior Esquerdo + Abas de Navegação */}
           <div className="flex items-center gap-3 sm:gap-6">
-            <div
+            <button
+              type="button"
               onClick={() => setActiveTab('NOTICIAS')}
-              className="flex items-center gap-2 cursor-pointer select-none group"
+              aria-label="InfoConcursos Editorial — Ir para o Feed de Notícias"
+              className="flex items-center gap-2 cursor-pointer select-none group rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]"
             >
               <div className="w-2.5 h-2.5 rounded-full bg-[#748B7B] ring-2 ring-[#607466]/40 group-hover:scale-110 transition-transform" />
               <span className="font-display text-lg tracking-tight text-[#FFFCF2] font-normal">
@@ -115,17 +121,18 @@ export function App(): React.JSX.Element {
               <span className="hidden md:inline-block px-1.5 py-0.5 border border-[#E5D5B3]/25 rounded text-[10px] font-label-sm uppercase tracking-widest text-[#E5D5B3]/85 bg-[#171617]">
                 Editorial
               </span>
-            </div>
+            </button>
 
             {/* Navegação em Pílulas */}
             <nav className="flex items-center gap-1 sm:gap-1.5" aria-label="Navegação principal">
               <button
                 type="button"
+                aria-current={activeTab === 'NOTICIAS' ? 'page' : undefined}
                 onClick={() => setActiveTab('NOTICIAS')}
                 className={
                   activeTab === 'NOTICIAS'
-                    ? 'px-3 py-1 rounded-md font-label-sm text-xs bg-[#607466]/25 border border-[#607466]/50 text-[#FFFCF2] shadow-inner transition-all cursor-pointer font-medium'
-                    : 'px-3 py-1 rounded-md font-label-sm text-xs text-[#BDBAB5] hover:text-[#FFFCF2] hover:bg-[#262527] transition-all cursor-pointer'
+                    ? 'px-3 py-1 rounded-md font-label-sm text-xs bg-[#607466]/25 border border-[#607466]/50 text-[#FFFCF2] shadow-inner transition-all cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]'
+                    : 'px-3 py-1 rounded-md font-label-sm text-xs text-[#BDBAB5] hover:text-[#FFFCF2] hover:bg-[#262527] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]'
                 }
               >
                 Feed de Notícias
@@ -133,11 +140,12 @@ export function App(): React.JSX.Element {
 
               <button
                 type="button"
+                aria-current={activeTab === 'DESCOBERTA' ? 'page' : undefined}
                 onClick={() => setActiveTab('DESCOBERTA')}
                 className={
                   activeTab === 'DESCOBERTA'
-                    ? 'px-3 py-1 rounded-md font-label-sm text-xs bg-[#607466]/25 border border-[#607466]/50 text-[#FFFCF2] shadow-inner transition-all cursor-pointer font-medium'
-                    : 'px-3 py-1 rounded-md font-label-sm text-xs text-[#BDBAB5] hover:text-[#FFFCF2] hover:bg-[#262527] transition-all cursor-pointer'
+                    ? 'px-3 py-1 rounded-md font-label-sm text-xs bg-[#607466]/25 border border-[#607466]/50 text-[#FFFCF2] shadow-inner transition-all cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]'
+                    : 'px-3 py-1 rounded-md font-label-sm text-xs text-[#BDBAB5] hover:text-[#FFFCF2] hover:bg-[#262527] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]'
                 }
               >
                 Busca &amp; Dossiês
@@ -145,11 +153,12 @@ export function App(): React.JSX.Element {
 
               <button
                 type="button"
+                aria-current={activeTab === 'ACOMPANHAMENTOS' ? 'page' : undefined}
                 onClick={() => setActiveTab('ACOMPANHAMENTOS')}
                 className={
                   activeTab === 'ACOMPANHAMENTOS'
-                    ? 'px-3 py-1 rounded-md font-label-sm text-xs bg-[#607466]/25 border border-[#607466]/50 text-[#FFFCF2] shadow-inner transition-all flex items-center gap-1.5 cursor-pointer font-medium'
-                    : 'px-3 py-1 rounded-md font-label-sm text-xs text-[#BDBAB5] hover:text-[#FFFCF2] hover:bg-[#262527] transition-all flex items-center gap-1.5 cursor-pointer'
+                    ? 'px-3 py-1 rounded-md font-label-sm text-xs bg-[#607466]/25 border border-[#607466]/50 text-[#FFFCF2] shadow-inner transition-all flex items-center gap-1.5 cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]'
+                    : 'px-3 py-1 rounded-md font-label-sm text-xs text-[#BDBAB5] hover:text-[#FFFCF2] hover:bg-[#262527] transition-all flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]'
                 }
               >
                 <span>Acompanhamentos</span>
@@ -165,6 +174,7 @@ export function App(): React.JSX.Element {
             {/* Botão de Fixar / Desafixar */}
             <button
               type="button"
+              aria-pressed={isHeaderPinned}
               onClick={() => {
                 const nextPinned = !isHeaderPinned
                 setIsHeaderPinned(nextPinned)
@@ -177,7 +187,12 @@ export function App(): React.JSX.Element {
                   ? 'Barra Fixada no topo • Clique para alternar para modo retrátil'
                   : 'Barra Retrátil • Clique para manter fixada no topo'
               }
-              className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 text-xs font-label-sm ${
+              aria-label={
+                isHeaderPinned
+                  ? 'Barra fixada no topo. Alternar para modo retrátil'
+                  : 'Barra retrátil. Manter fixada no topo'
+              }
+              className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 text-xs font-label-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B] ${
                 isHeaderPinned
                   ? 'bg-[#243028] text-[#748B7B] border-[#607466]/40 hover:bg-[#2e3e34]'
                   : 'bg-[#171617] text-[#BDBAB5] border-[#E5D5B3]/15 hover:text-[#FFFCF2] hover:bg-[#262527]'
@@ -198,18 +213,38 @@ export function App(): React.JSX.Element {
                   setIsHeaderHovered(false)
                 }}
                 title="Recolher barra para modo retrátil (revela por hover ou botão discreto)"
-                className="p-1.5 rounded-lg bg-[#171617] hover:bg-[#262527] border border-[#E5D5B3]/15 text-[#BDBAB5] hover:text-[#FFFCF2] transition-colors cursor-pointer"
+                aria-label="Recolher barra de navegação para modo retrátil"
+                className="p-1.5 rounded-lg bg-[#171617] hover:bg-[#262527] border border-[#E5D5B3]/15 text-[#BDBAB5] hover:text-[#FFFCF2] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]"
               >
                 <ChevronUp className="w-4 h-4" />
               </button>
             )}
 
+            {/* Botão de Política de Privacidade & Segurança LGPD */}
+            <button
+              type="button"
+              aria-current={activeTab === 'PRIVACIDADE' ? 'page' : undefined}
+              onClick={() => setActiveTab('PRIVACIDADE')}
+              title="Política de Privacidade, Criptografia & Proxy (LGPD)"
+              aria-label="Política de Privacidade, Criptografia e Proxy LGPD"
+              className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 text-xs font-label-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B] ${
+                activeTab === 'PRIVACIDADE'
+                  ? 'bg-[#607466] text-[#FFFCF2] border-[#748B7B]'
+                  : 'bg-[#171617] hover:bg-[#262527] border border-[#E5D5B3]/15 text-[#BDBAB5] hover:text-[#FFFCF2]'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span className="hidden lg:inline text-[11px]">Privacidade</span>
+            </button>
+
             {/* Botão de Configurações (Engrenagem) */}
             <button
               type="button"
+              aria-current={activeTab === 'CONFIGURACOES' ? 'page' : undefined}
               onClick={() => setActiveTab('CONFIGURACOES')}
               title="Configurações & Diretório Oficial de Fontes"
-              className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+              aria-label="Configurações e Diretório Oficial de Fontes"
+              className={`p-1.5 rounded-lg border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B] ${
                 activeTab === 'CONFIGURACOES'
                   ? 'bg-[#607466] text-[#FFFCF2] border-[#748B7B]'
                   : 'bg-[#171617] hover:bg-[#262527] border border-[#E5D5B3]/15 text-[#BDBAB5] hover:text-[#FFFCF2]'
@@ -271,7 +306,9 @@ export function App(): React.JSX.Element {
                 isLoading={isLoadingSearch}
                 searchAtualizadoEm={searchAtualizadoEm}
                 searchFromCache={searchFromCache}
+                validationWarning={searchValidationWarning}
                 onUpdateFilter={setFilter}
+                onValidationWarning={setSearchValidationWarning}
                 onSubmitSearch={executeSearch}
               />
 
@@ -379,6 +416,9 @@ export function App(): React.JSX.Element {
 
           {/* 5. PÁGINA DE CONFIGURAÇÕES & FONTES OFICIAIS */}
           {activeTab === 'CONFIGURACOES' && <SettingsPage />}
+
+          {/* 6. PÁGINA DE POLÍTICA DE PRIVACIDADE, CRIPTOGRAFIA & PROXY (LGPD) */}
+          {activeTab === 'PRIVACIDADE' && <PrivacyPolicyPage />}
         </div>
       </main>
     </div>

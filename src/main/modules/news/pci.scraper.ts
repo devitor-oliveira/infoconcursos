@@ -2,6 +2,8 @@ import * as cheerio from 'cheerio'
 import { NewsItem } from '../../../shared/types/news'
 import { ConcursoArea, ConcursoStatus } from '../../../shared/types/concurso'
 import { isResultCurrent } from '../search/query-sanitizer'
+import { fetchHtmlWithSafety } from '../search/http-client'
+import { anonymizeText } from '../../../shared/utils/anonymizer'
 
 function inferAreaFromText(text: string): ConcursoArea {
   const lower = text.toLowerCase()
@@ -36,9 +38,12 @@ export function parsePciNewsHtml(html: string): NewsItem[] {
 
   $('.ca, .noticia, li, article').each((idx, el) => {
     const linkEl = $(el).find('a').first()
-    const titulo = linkEl.text().replace(/\s+/g, ' ').trim()
+    const rawTitulo = linkEl.text().replace(/\s+/g, ' ').trim()
     let href = linkEl.attr('href') || ''
-    const resumo = $(el).text().replace(titulo, '').replace(/\s+/g, ' ').trim()
+    const rawResumo = $(el).text().replace(rawTitulo, '').replace(/\s+/g, ' ').trim()
+
+    const titulo = anonymizeText(rawTitulo, 'SCRAPED_TEXT')
+    const resumo = anonymizeText(rawResumo, 'SCRAPED_TEXT')
 
     if (!titulo || titulo.length < 18 || !href) return
     if (href.startsWith('/')) {
@@ -66,25 +71,9 @@ export function parsePciNewsHtml(html: string): NewsItem[] {
 }
 
 export async function scrapePciRecentNews(): Promise<NewsItem[]> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 6000)
-
-  try {
-    const response = await fetch('https://www.pciconcursos.com.br/noticias/', {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml'
-      },
-      signal: controller.signal
-    })
-    clearTimeout(timeout)
-
-    if (!response.ok) return []
-    const html = await response.text()
-    return parsePciNewsHtml(html)
-  } catch {
-    clearTimeout(timeout)
-    return []
-  }
+  const res = await fetchHtmlWithSafety('https://www.pciconcursos.com.br/noticias/', {
+    timeoutMs: 6000
+  })
+  if (!res) return []
+  return parsePciNewsHtml(res.html)
 }

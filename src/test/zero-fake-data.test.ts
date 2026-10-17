@@ -7,7 +7,7 @@ import { parseSafeIsoDate } from '../main/modules/news/sitemap-rss.scraper'
 import { convertConcreteToDossier } from '../main/modules/search/portals-concrete.scraper'
 import { ConcreteScrapedConcurso } from '../main/modules/search/portals-concrete.scraper'
 
-describe('Fase 6: Suite "Zero Fake Data" e Validação Estrita de Integridade Editorial', () => {
+describe('ZeroFakeDataPolicy (Validação Estrita de Integridade Editorial e Ausência de Alucinações)', () => {
   it('não deve inferir INSCRICOES_ABERTAS quando houver frases negativas', () => {
     const textNegativa = 'O órgão informou que ainda não abriu inscrições para o concurso de 2025.'
     const result = detectConcursoStatusAndBanca([textNegativa])

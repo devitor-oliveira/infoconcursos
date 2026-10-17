@@ -15,109 +15,147 @@ import { parseGranCursosRssXml } from '../main/modules/news/sitemap-rss.scraper'
 
 const FIXTURES_DIR = path.resolve(__dirname, 'fixtures')
 
-describe('Fase 6: Testes Unitários de Parsers Síncronos com Fixtures Reais', () => {
-  it('parsePciHtml deve extrair concursos sem inventar dados e lidar com nomes com acentos e aspas', () => {
+describe('PortalsAndBancasScrapers (Parsers Síncronos com Fixtures Autênticas)', () => {
+  it('deve extrair concursos com integridade de dados e lidar com pontuação complexa ao fazer parsing do HTML do PCI Concursos', () => {
+    // 1. Arrange
     const html = fs.readFileSync(path.join(FIXTURES_DIR, 'pci-concursos.html'), 'utf-8')
+
+    // 2. Act
     const results = parsePciHtml(html)
 
-    expect(results.length).toBe(3)
+    // 3. Assert
+    expect(results).toHaveLength(3)
 
-    // 1. TJ-SP
+    // TJ-SP
     const tjsp = results.find((r) => r.orgao.includes('TJ-SP'))
     expect(tjsp).toBeDefined()
-    expect(tjsp?.vagas).toBe('500 vagas')
-    expect(tjsp?.remuneracao).toContain('R$ 7.200,00')
-    expect(tjsp?.prazoInscricao).toBe('Inscrições até 25/11/2025')
-    expect(tjsp?.id).toMatch(/^pci-[0-9a-f]{16}$/)
+    expect(tjsp!).toMatchObject({
+      vagas: '500 vagas',
+      prazoInscricao: 'Inscrições até 25/11/2025'
+    })
+    expect(tjsp!.remuneracao).toContain('R$ 7.200,00')
+    expect(tjsp!.id).toMatch(/^pci-[0-9a-f]{16}$/)
 
-    // 2. Banco do Brasil (CR deve ser isolado por boundary)
+    // Banco do Brasil (CR deve ser isolado por boundary regex)
     const bb = results.find((r) => r.orgao.includes('Banco do Brasil'))
     expect(bb).toBeDefined()
-    expect(bb?.vagas).toBe('CR')
+    expect(bb!.vagas).toBe('CR')
 
-    // 3. Prefeitura de Santa Bárbara d'Oeste (hífens, apóstrofos e acentos)
+    // Prefeitura de Santa Bárbara d'Oeste (hífens, apóstrofos e acentos)
     const sb = results.find((r) => r.orgao.includes("Santa Bárbara d'Oeste"))
     expect(sb).toBeDefined()
-    expect(sb?.orgao).toBe("Prefeitura de Santa Bárbara d'Oeste")
-    expect(sb?.vagas).toBe('12 vagas')
+    expect(sb!).toMatchObject({
+      orgao: "Prefeitura de Santa Bárbara d'Oeste",
+      vagas: '12 vagas'
+    })
   })
 
-  it('parseAcheConcursosHtml deve extrair títulos, salários e resolver links relativos', () => {
+  it('deve extrair títulos, salários e resolver URLs relativas ao fazer parsing do Ache Concursos', () => {
+    // 1. Arrange
     const html = fs.readFileSync(path.join(FIXTURES_DIR, 'ache-concursos.html'), 'utf-8')
+
+    // 2. Act
     const results = parseAcheConcursosHtml(html, 'MG')
 
-    expect(results.length).toBe(2)
+    // 3. Assert
+    expect(results).toHaveLength(2)
 
     const ibge = results.find((r) => r.orgao.includes('IBGE'))
     expect(ibge).toBeDefined()
-    expect(ibge?.url).toMatch(/^https:\/\/www\.acheconcursos\.com\.br\//)
-    expect(ibge?.remuneracao).toContain('R$ 9.350,00')
-    expect(ibge?.vagas).toContain('895')
-    expect(ibge?.id).toMatch(/^ache-[0-9a-f]{16}$/)
+    expect(ibge!.url).toMatch(/^https:\/\/www\.acheconcursos\.com\.br\//)
+    expect(ibge!.remuneracao).toContain('R$ 9.350,00')
+    expect(ibge!.vagas).toContain('895')
+    expect(ibge!.id).toMatch(/^ache-[0-9a-f]{16}$/)
 
     const pc = results.find((r) => r.orgao.includes('Polícia Civil'))
     expect(pc).toBeDefined()
-    expect(pc?.remuneracao).toContain('R$ 14.200,00')
+    expect(pc!.remuneracao).toContain('R$ 14.200,00')
   })
 
-  it('parseConcursosNoBrasilHtml deve extrair vagas e órgão da tabela', () => {
+  it('deve extrair quantitativo de vagas e órgão estadual da tabela do Concursos no Brasil', () => {
+    // 1. Arrange
     const html = fs.readFileSync(path.join(FIXTURES_DIR, 'concursos-no-brasil.html'), 'utf-8')
+
+    // 2. Act
     const results = parseConcursosNoBrasilHtml(html, 'MG')
 
-    expect(results.length).toBe(2)
+    // 3. Assert
+    expect(results).toHaveLength(2)
     const uberlandia = results.find((r) => r.orgao.includes('Uberlândia'))
     expect(uberlandia).toBeDefined()
-    expect(uberlandia?.vagas).toBe('150 vaga(s)')
-    expect(uberlandia?.uf).toBe('MG')
-    expect(uberlandia?.remuneracao).toBe('Não especificado na publicação')
+    expect(uberlandia!).toMatchObject({
+      vagas: '150 vaga(s)',
+      uf: 'MG',
+      remuneracao: 'Não especificado na publicação'
+    })
   })
 
-  it('parseSelecaoNetHtml deve resolver URLs relativas da Fundep e extrair CR e vagas imediatas', () => {
+  it('deve resolver links relativos e isolar vagas e Cadastro de Reserva ao processar Selecao.net Fundep', () => {
+    // 1. Arrange
     const html = fs.readFileSync(path.join(FIXTURES_DIR, 'selecao-net-fundep.html'), 'utf-8')
+
+    // 2. Act
     const results = parseSelecaoNetHtml(html, 'https://www.gestaodeconcursos.com.br', 'Fundep', 'MG')
 
-    expect(results.length).toBe(2)
+    // 3. Assert
+    expect(results).toHaveLength(2)
     const ufmg = results.find((r) => r.titulo.includes('UFMG'))
     expect(ufmg).toBeDefined()
-    expect(ufmg?.url).toBe('https://www.gestaodeconcursos.com.br/informacoes/concurso-ufmg-tecnicos-2025')
-    expect(ufmg?.vagas).toContain('35 vagas imediatas')
+    expect(ufmg!.url).toBe('https://www.gestaodeconcursos.com.br/informacoes/concurso-ufmg-tecnicos-2025')
+    expect(ufmg!.vagas).toContain('35 vagas imediatas')
 
     const copasa = results.find((r) => r.titulo.includes('COPASA'))
     expect(copasa).toBeDefined()
-    expect(copasa?.vagas).toBe('CR')
+    expect(copasa!.vagas).toBe('CR')
   })
 
-  it('parseGestorEditaisHtml deve extrair editais com URL absoluta', () => {
+  it('deve extrair editais com URLs absolutas a partir do Gestor de Editais Idecan', () => {
+    // 1. Arrange
     const html = fs.readFileSync(path.join(FIXTURES_DIR, 'gestor-editais-idecan.html'), 'utf-8')
+
+    // 2. Act
     const results = parseGestorEditaisHtml(html, 'https://idecan.org.br', 'Idecan', 'MG')
 
-    expect(results.length).toBe(2)
+    // 3. Assert
+    expect(results).toHaveLength(2)
     const cbmmg = results.find((r) => r.titulo.includes('CBM-MG'))
     expect(cbmmg).toBeDefined()
-    expect(cbmmg?.url).toBe('https://idecan.org.br/edital/ver/145')
-    expect(cbmmg?.fonte).toBe('Idecan')
+    expect(cbmmg!).toMatchObject({
+      url: 'https://idecan.org.br/edital/ver/145',
+      fonte: 'Idecan'
+    })
   })
 
-  it('parseFgvHtml deve extrair certames e limpar prefixo "Concurso Público para"', () => {
+  it('deve extrair certames e remover prefixos redundantes ao processar portal FGV Conhecimento', () => {
+    // 1. Arrange
     const html = fs.readFileSync(path.join(FIXTURES_DIR, 'fgv-conhecimento.html'), 'utf-8')
+
+    // 2. Act
     const results = parseFgvHtml(html)
 
-    expect(results.length).toBe(2)
+    // 3. Assert
+    expect(results).toHaveLength(2)
     const tse = results.find((r) => r.titulo.includes('TSE'))
     expect(tse).toBeDefined()
-    expect(tse?.url).toBe('https://conhecimento.fgv.br/concursos/tse-unificado-2025')
-    expect(tse?.orgao).toContain('Tribunal Superior Eleitoral')
+    expect(tse!.url).toBe('https://conhecimento.fgv.br/concursos/tse-unificado-2025')
+    expect(tse!.orgao).toContain('Tribunal Superior Eleitoral')
   })
 
-  it('parseGranCursosRssXml deve extrair notícias com data ISO válida e sem erros', () => {
+  it('deve extrair notícias jornalísticas com data ISO válida do feed RSS Gran Cursos', () => {
+    // 1. Arrange
     const xml = fs.readFileSync(path.join(FIXTURES_DIR, 'rss-grancursos.xml'), 'utf-8')
+
+    // 2. Act
     const results = parseGranCursosRssXml(xml)
 
-    expect(results.length).toBe(2)
+    // 3. Assert
+    expect(results).toHaveLength(2)
     const correios = results.find((r) => r.titulo.includes('Correios'))
     expect(correios).toBeDefined()
-    expect(correios?.portalFonte).toBe('Gran Cursos Online')
-    expect(correios?.tipoConteudo).toBe('NOTICIA_APURACAO')
+    expect(correios!).toMatchObject({
+      portalFonte: 'Gran Cursos Online',
+      tipoConteudo: 'NOTICIA_APURACAO'
+    })
     expect(isNaN(Date.parse(correios!.dataPublicacao))).toBe(false)
   })
 })

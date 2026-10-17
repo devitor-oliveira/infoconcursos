@@ -1,7 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import fs from 'node:fs'
-import path from 'node:path'
-import os from 'node:os'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { initDatabase, closeDatabase } from '../main/database'
 import { concursosTable } from '../main/database/schema'
 import { ConcursoDossier } from '../shared/types/concurso'
@@ -12,8 +9,6 @@ import {
   listMonitoredConcursos,
   checkMonitoredUpdatesNow
 } from '../main/modules/monitoring/monitor-service'
-
-const tempE2eDbPath = path.join(os.tmpdir(), `infoconcursos-e2e-${Date.now()}.db`)
 
 const sampleBbDossier: ConcursoDossier = {
   id: 'apuracao-bb-test',
@@ -135,9 +130,10 @@ const sampleTjSpDossier: ConcursoDossier = {
   atualizadoEm: new Date().toISOString()
 }
 
-describe('Fases 5 & 6 - Sistema de Acompanhamento, Detector de Mudanças & Homologação E2E', () => {
-  beforeAll(async () => {
-    const db = await initDatabase(tempE2eDbPath)
+describe('MonitoringService (Acompanhamento, Detector de Mudanças e Integração)', () => {
+  beforeEach(async () => {
+    closeDatabase()
+    const db = await initDatabase(':memory:')
     for (const d of [sampleBbDossier, sampleTrtMgDossier, sampleTjSpDossier]) {
       db.insert(concursosTable)
         .values({
@@ -158,18 +154,18 @@ describe('Fases 5 & 6 - Sistema de Acompanhamento, Detector de Mudanças & Homol
     }
   })
 
-  afterAll(() => {
+  afterEach(() => {
     closeDatabase()
-    if (fs.existsSync(tempE2eDbPath)) {
-      fs.unlinkSync(tempE2eDbPath)
-    }
   })
 
-  it('deve persistir concurso acompanhado no SQLite e manter os dados intactos', async () => {
+  it('deve persistir concurso acompanhado no SQLite e listar registro com integridade dos dados', async () => {
+    // 1. Arrange & Act
     const dossiers = await generateConcursoDossiers({ termoLivre: 'Banco do Brasil' }, { skipNetwork: true })
     expect(dossiers.length).toBeGreaterThanOrEqual(1)
 
     const toggleRes = toggleMonitorConcurso(dossiers[0])
+
+    // 3. Assert
     expect(toggleRes.monitored).toBe(true)
     expect(toggleRes.items).toHaveLength(1)
     expect(toggleRes.items[0].orgao).toContain('Banco do Brasil')
@@ -181,7 +177,8 @@ describe('Fases 5 & 6 - Sistema de Acompanhamento, Detector de Mudanças & Homol
     expect(checkRes.items).toHaveLength(1)
   })
 
-  it('deve detectar mudança de status ou novo link de referência entre snapshots', async () => {
+  it('deve identificar alteração de status ou links quando houver divergência entre snapshots do dossiê', async () => {
+    // 1. Arrange
     const [baseDossier] = await generateConcursoDossiers({ termoLivre: 'TRT MG' }, { skipNetwork: true })
     expect(baseDossier).toBeDefined()
 
@@ -191,25 +188,28 @@ describe('Fases 5 & 6 - Sistema de Acompanhamento, Detector de Mudanças & Homol
       statusLabel: 'Edital Publicado'
     }
 
+    // 2. Act
     const diff = detectDossierChanges(baseDossier, updatedDossier)
+
+    // 3. Assert
     expect(diff.hasChanged).toBe(true)
     expect(diff.summary).toContain('Edital Publicado')
   })
 
-  it('deve homologar os 3 cenários reais: Banco do Brasil, TRT MG e Descoberta por Área (Tribunais SP)', async () => {
-    // Cenário 1: Banco do Brasil
+  it('deve gerar dossiês e validar filtros para cenários consolidados de concursos nacionais e estaduais', async () => {
+    // 1. Cenário: Banco do Brasil (Bancária, Nacional)
     const bbDossiers = await generateConcursoDossiers({ termoLivre: 'Banco do Brasil' }, { skipNetwork: true })
     expect(bbDossiers[0].orgao).toContain('Banco do Brasil')
     expect(bbDossiers[0].resumoGeral).not.toMatch(/\b2021\b/)
     expect(bbDossiers[0].materiasRecomendadas.some((m) => m.includes('Conhecimentos Bancários'))).toBe(true)
 
-    // Cenário 2: TRT MG
+    // 2. Cenário: TRT MG (Tribunais, Regional MG)
     const trtDossiers = await generateConcursoDossiers({ termoLivre: 'TRT MG' }, { skipNetwork: true })
     expect(trtDossiers[0].orgao).toContain('TRT-MG')
     expect(trtDossiers[0].status).toBe('COMISSAO_FORMADA')
     expect(trtDossiers[0].materiasRecomendadas.some((m) => m.includes('Direito do Trabalho'))).toBe(true)
 
-    // Cenário 3: Descoberta Ampla (Tribunais em SP)
+    // 3. Cenário: Descoberta Ampla (Tribunais em SP)
     const spTribunais = await generateConcursoDossiers(
       { area: 'TRIBUNAIS', uf: 'SP' },
       { skipNetwork: true }

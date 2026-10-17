@@ -106,8 +106,17 @@ export function MonitoringPage({
                     onClick={() => onOpenDossier(item)}
                     className="lg:col-span-6 space-y-1 cursor-pointer"
                   >
-                    <h3 className="font-display text-xl sm:text-2xl text-[#FFFCF2] group-hover:text-[#E5D5B3] transition-colors leading-snug">
-                      {item.tituloConcurso}
+                    <h3 className="font-display text-xl sm:text-2xl leading-snug">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onOpenDossier(item)
+                        }}
+                        className="text-left text-[#FFFCF2] group-hover:text-[#E5D5B3] transition-colors cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]"
+                      >
+                        {item.tituloConcurso}
+                      </button>
                     </h3>
                     {item.descricaoNovidade && (
                       <p className="font-body-sm text-body-sm text-[#BDBAB5] leading-relaxed">
@@ -133,6 +142,7 @@ export function MonitoringPage({
                       variant="danger"
                       size="sm"
                       title="Remover acompanhamento"
+                      aria-label={`Remover acompanhamento de ${item.tituloConcurso}`}
                       onClick={() => onRemoveMonitored(item.id)}
                       leftIcon={<Trash2 className="w-3.5 h-3.5" />}
                     />

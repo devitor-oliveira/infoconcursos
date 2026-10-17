@@ -6,6 +6,8 @@ import { matchRecommendedSubjects } from '../dossier/syllabus-matcher'
 import { parseDeadlineDate } from '../dossier/date-extractor'
 import { fetchHtmlWithSafety } from './http-client'
 import { generateCanonicalId } from './id-generator'
+import { normalizeToAbsoluteHttps, resolveOfficialDossierLinks } from './url-resolver'
+import { anonymizeDossierForStorage } from '../../../shared/utils/anonymizer'
 
 export interface ConcreteScrapedConcurso {
   id: string
@@ -50,7 +52,8 @@ export function parsePciHtml(html: string, targetUf?: string): ConcreteScrapedCo
     const tituloCompleto = linkEl.attr('title') || orgao
 
     if (!orgao || !href) return
-    if (href.startsWith('/')) href = `https://www.pciconcursos.com.br${href}`
+    href = normalizeToAbsoluteHttps(href, 'https://www.pciconcursos.com.br')
+    if (!href) return
 
     const uf = $(el).find('.cc').text().trim() || targetUf || 'BR'
     const rawCd = $(el).find('.cd')
@@ -119,7 +122,8 @@ export function parseAcheConcursosHtml(html: string, targetUf?: string): Concret
     let href = linkEl.attr('href') || ''
     const titulo = $(el).find('span.titulo').text().replace(/\s+/g, ' ').trim()
     if (!titulo || !href) return
-    if (href.startsWith('/')) href = `https://www.acheconcursos.com.br${href}`
+    href = normalizeToAbsoluteHttps(href, 'https://www.acheconcursos.com.br')
+    if (!href) return
 
     const escolaridade = $(el).find('span.vagas').text().replace(/^N[ií]vel:\s*/i, '').trim()
     const inscricaoFim = $(el).find('span.inscricao_fim').text().replace(/\s+/g, ' ').trim()
@@ -170,6 +174,8 @@ export function parseConcursosNoBrasilHtml(html: string, targetUf?: string): Con
     const orgao = linkEl.text().replace(/\s+/g, ' ').trim()
     const fullTitle = linkEl.attr('title') || orgao
     if (!orgao || !href) return
+    href = normalizeToAbsoluteHttps(href, 'https://concursosnobrasil.com')
+    if (!href) return
 
     const vagasText = $(el).find('td.center').text().replace(/\s+/g, ' ').trim()
 
@@ -233,9 +239,36 @@ export function convertConcreteToDossier(
   const isAgregador = ['PCI Concursos', 'Ache Concursos', 'Concursos no Brasil'].includes(item.fonte)
   const tipoRegistro = isAgregador ? 'AGREGADOR' : 'EDITAL_OFICIAL'
 
-  return {
+  const officialResolution = resolveOfficialDossierLinks({
+    orgao: item.orgao,
+    rawTitle: item.titulo,
+    bancaNameHint: item.bancaNome || detected.bancaDetectada?.nome,
+    sourceUrl: item.url,
+    sourceFonte: item.fonte,
+    isDirectBancaEdital: !isAgregador
+  })
+
+  const bancaFinal = item.bancaNome
+    ? {
+        nome: item.bancaNome,
+        situacao: 'CONTRATADA' as const,
+        observacao: `Banca organizadora ${item.bancaNome} vinculada à publicação oficial.`
+      }
+    : officialResolution.bancaIdentificada
+      ? {
+          nome: officialResolution.bancaIdentificada.name,
+          situacao: 'CONTRATADA' as const,
+          observacao: `Banca organizadora ${officialResolution.bancaIdentificada.name} identificada e validada no cadastro de bancas.`
+        }
+      : detected.bancaDetectada || {
+          nome: 'Consultar no documento oficial',
+          situacao: 'A_DEFINIR' as const,
+          observacao: 'Informações detalhadas sobre a banca organizadora constam no ato de publicação.'
+        }
+
+  return anonymizeDossierForStorage({
     id: `conc-${item.id}`,
-    urlCanonica: item.url,
+    urlCanonica: officialResolution.urlCanonica,
     termoOriginal: item.orgao,
     orgao: item.orgao,
     tituloConcurso: item.titulo,
@@ -249,17 +282,7 @@ export function convertConcreteToDossier(
     escolaridade: item.escolaridade || 'Consulte os requisitos específicos do cargo',
     numeroVagas: item.vagas || 'Conforme publicação oficial',
     salarioMaximo: item.remuneracao || 'Não especificado na publicação',
-    banca: item.bancaNome
-      ? {
-          nome: item.bancaNome,
-          situacao: 'CONTRATADA',
-          observacao: `Banca organizadora ${item.bancaNome} vinculada à publicação.`
-        }
-      : detected.bancaDetectada || {
-          nome: 'Consultar no documento oficial',
-          situacao: 'A_DEFINIR',
-          observacao: 'Informações detalhadas sobre a banca organizadora constam no ato de publicação.'
-        },
+    banca: bancaFinal,
     cronograma: {
       previsaoEdital: 'Publicado / Disponível no portal',
       periodoInscricoes: item.prazoInscricao || 'Consulte o cronograma no edital',
@@ -279,15 +302,7 @@ export function convertConcreteToDossier(
       }
     ],
     materiasRecomendadas: matchRecommendedSubjects(area, [item.orgao, item.titulo]),
-    linksReferencia: [
-      {
-        id: `ref-${item.id}`,
-        titulo: `${item.orgao} — Página no ${item.fonte}`,
-        url: item.url,
-        fonte: item.fonte,
-        tipo: isAgregador ? 'NOTICIA' : 'PORTAL_OFICIAL'
-      }
-    ],
+    linksReferencia: officialResolution.linksReferencia,
     atualizadoEm: new Date().toISOString()
-  }
+  })
 }

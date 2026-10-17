@@ -54,7 +54,17 @@ export function DossierPage({
   }
 
   const firstRole = dossier.cargosPrevistos && dossier.cargosPrevistos.length > 0 ? dossier.cargosPrevistos[0] : null
-  const primaryUrl = dossier.urlCanonica || (dossier.linksReferencia && dossier.linksReferencia.length > 0 ? dossier.linksReferencia[0].url : null)
+  const officialLink = dossier.linksReferencia?.find(
+    (l) => l.tipo === 'BANCA' || l.tipo === 'PORTAL_OFICIAL' || l.tipo === 'EDITAL_PDF'
+  )
+  const primaryUrl =
+    dossier.urlCanonica &&
+    !dossier.urlCanonica.includes('pciconcursos') &&
+    !dossier.urlCanonica.includes('acheconcursos') &&
+    !dossier.urlCanonica.includes('concursosnobrasil')
+      ? dossier.urlCanonica
+      : officialLink?.url || dossier.urlCanonica || (dossier.linksReferencia && dossier.linksReferencia.length > 0 ? dossier.linksReferencia[0].url : null)
+  const bancaLink = dossier.linksReferencia?.find((l) => l.tipo === 'BANCA')
 
   return (
     <div className="w-full space-y-6 pb-16">
@@ -269,6 +279,18 @@ export function DossierPage({
               <p className="font-body-sm text-sm text-[#BDBAB5] leading-relaxed">
                 {dossier.banca.observacao}
               </p>
+              {bancaLink && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => window.api.openExternalUrl(bancaLink.url)}
+                    className="px-3 py-1.5 rounded-lg bg-[#171617] hover:bg-[#262527] border border-[#E5D5B3]/20 text-[#E5D5B3] hover:text-[#FFFCF2] font-label-sm text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-[#748B7B]" />
+                    <span>Acessar Portal da Organizadora</span>
+                  </button>
+                </div>
+              )}
             </div>
           </section>
 

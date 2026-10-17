@@ -1,7 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { initDatabase, closeDatabase } from '../main/database'
 import {
   buildCacheKey,
@@ -14,8 +11,15 @@ import { ConcursoDossier } from '../shared/types/concurso'
 import { SearchFilter } from '../shared/types/search'
 import { NewsItem } from '../shared/types/news'
 
-describe('Fase 6: Arquitetura de Cache SQLite Local e Zero Requisições Desnecessárias', () => {
-  const tempCacheDbPath = path.join(os.tmpdir(), `infoconcursos-cache-test-${Date.now()}.db`)
+describe('SearchCacheService (SQLite In-Memory Hermético)', () => {
+  beforeEach(async () => {
+    closeDatabase()
+    await initDatabase(':memory:')
+  })
+
+  afterEach(() => {
+    closeDatabase()
+  })
 
   const mockFilter: SearchFilter = {
     termoLivre: 'Tribunal Regional do Trabalho MG',
@@ -69,62 +73,52 @@ describe('Fase 6: Arquitetura de Cache SQLite Local e Zero Requisições Desnece
     }
   ]
 
-  beforeAll(async () => {
-    await initDatabase(tempCacheDbPath)
-  })
-
-  afterAll(() => {
-    closeDatabase()
-    if (fs.existsSync(tempCacheDbPath)) {
-      try {
-        fs.unlinkSync(tempCacheDbPath)
-      } catch {
-        // ignora lock de exclusão no windows
-      }
-    }
-  })
-
-  it('buildCacheKey deve normalizar acentos, maiúsculas e gerar chave estável', () => {
+  it('deve gerar chave canônica normalizada quando receber termos com acentos ou espaços', () => {
+    // 1. Arrange & Act
     const key1 = buildCacheKey({ termoLivre: 'TRT Minas Gerais', area: 'TRIBUNAIS', uf: 'MG' })
     const key2 = buildCacheKey({ termoLivre: '  trt minas gerais  ', area: 'TRIBUNAIS', uf: 'MG' })
+
+    // 3. Assert
     expect(key1).toBe(key2)
     expect(key1).toBe('search:trt_minas_gerais:TRIBUNAIS:MG:TODOS')
   })
 
-  it('1ª Busca (Cache Miss): deve retornar null quando o cache estiver vazio', () => {
+  it('deve retornar null quando a consulta não existir no cache (Cache Miss)', () => {
+    // 1. Arrange & Act
     const cached = getCachedSearchResults(mockFilter)
+
+    // 3. Assert
     expect(cached).toBeNull()
   })
 
-  it('Salva resultados de busca no SQLite com integridade referencial', () => {
-    expect(() => saveSearchResultsToCache(mockFilter, mockDossiers)).not.toThrow()
-  })
+  it('deve persistir e recuperar resultados do cache instantaneamente (< 100ms) quando houver Cache Hit', () => {
+    // 1. Arrange
+    saveSearchResultsToCache(mockFilter, mockDossiers)
 
-  it('2ª Busca (Cache Hit): deve retornar dados salvos instantaneamente sem acessar a rede', () => {
+    // 2. Act
     const tStart = performance.now()
     const cached = getCachedSearchResults(mockFilter)
     const tElapsed = performance.now() - tStart
 
+    // 3. Assert
     expect(cached).not.toBeNull()
     expect(cached?.data).toHaveLength(1)
     expect(cached?.data[0].id).toBe('trt-mg-2025-01')
     expect(cached?.data[0].orgao).toBe('Tribunal Regional do Trabalho da 3ª Região')
     expect(cached?.data[0].tipoRegistro).toBe('EDITAL_OFICIAL')
-
-    // Deve responder em menos de 100ms (típico sub-5ms em SQLite in-memory)
     expect(tElapsed).toBeLessThan(100)
   })
 
-  it('Ciclo de Cache para Notícias: Miss -> Salvar -> Hit com metadados de sync', () => {
-    // 1. Miss inicial
+  it('deve gerenciar o ciclo de vida do cache de notícias com metadados de sincronização', () => {
+    // 1. Arrange: Miss inicial
     const initialNews = getCachedNews('TRIBUNAIS', 'MG')
     expect(initialNews).toBeNull()
 
-    // 2. Salva no cache
+    // 2. Act: Salvar no cache
     saveNewsToCache(mockNews)
-
-    // 3. Hit subsequente
     const cachedNews = getCachedNews('TRIBUNAIS', 'MG')
+
+    // 3. Assert: Hit com metadados
     expect(cachedNews).not.toBeNull()
     expect(cachedNews?.data).toHaveLength(1)
     expect(cachedNews?.data[0].id).toBe('news-trt-01')

@@ -4,8 +4,14 @@ import { concursosTable, buscaCacheTable, noticiasTable, syncMetadataTable } fro
 import { ConcursoDossier } from '../../../shared/types/concurso'
 import { SearchFilter } from '../../../shared/types/search'
 import { NewsItem } from '../../../shared/types/news'
+import {
+  validateAndSanitizeSearchFilter,
+  anonymizeDossierForStorage,
+  anonymizeNewsItemForStorage
+} from '../../../shared/utils/anonymizer'
 
-export function buildCacheKey(filter: SearchFilter): string {
+export function buildCacheKey(rawFilter: SearchFilter): string {
+  const { sanitizedFilter: filter } = validateAndSanitizeSearchFilter(rawFilter)
   const normTerm = (filter.termoLivre || 'all')
     .toLowerCase()
     .normalize('NFD')
@@ -23,9 +29,13 @@ export function buildCacheKey(filter: SearchFilter): string {
  * Consulta o cache de busca no SQLite. Retorna os dados em <10ms sem encostar na rede.
  */
 export function getCachedSearchResults(
-  filter: SearchFilter
+  rawFilter: SearchFilter
 ): { data: ConcursoDossier[]; atualizadoEm: string } | null {
   try {
+    const { sanitizedFilter: filter, blockedPersonalData } = validateAndSanitizeSearchFilter(rawFilter)
+    if (blockedPersonalData && !filter.termoLivre) {
+      return null
+    }
     const db = getDb()
     const key = buildCacheKey(filter)
     const cacheRows = db.select().from(buscaCacheTable).where(eq(buscaCacheTable.cacheKey, key)).all()
@@ -105,16 +115,23 @@ export function getCachedSearchResults(
 }
 
 /**
- * Persiste dossiês de busca no SQLite com vinculação à chave de pesquisa.
+ * Persiste dossiês de busca no SQLite com vinculação à chave de pesquisa,
+ * aplicando anonimização profunda para garantir que nenhum dado pessoal seja gravado.
  */
-export function saveSearchResultsToCache(filter: SearchFilter, dossiers: ConcursoDossier[]): void {
+export function saveSearchResultsToCache(rawFilter: SearchFilter, rawDossiers: ConcursoDossier[]): void {
   try {
+    const { sanitizedFilter: filter, blockedPersonalData } = validateAndSanitizeSearchFilter(rawFilter)
+    if (blockedPersonalData && !filter.termoLivre) {
+      return
+    }
+
     const db = getDb()
     const key = buildCacheKey(filter)
     const nowIso = new Date().toISOString()
+    const dossiers = rawDossiers.map((d) => anonymizeDossierForStorage(d))
     const ids = dossiers.map((d) => d.id)
 
-    // Insere ou atualiza cada dossiê na tabela global de concursos
+    // Insere ou atualiza cada dossiê anonimizado na tabela global de concursos
     for (const d of dossiers) {
       db.insert(concursosTable)
         .values({
@@ -144,7 +161,7 @@ export function saveSearchResultsToCache(filter: SearchFilter, dossiers: Concurs
         .run()
     }
 
-    // Registra a chave de cache com a lista de IDs resultantes
+    // Registra a chave de cache higienizada com a lista de IDs resultantes
     db.insert(buscaCacheTable)
       .values({
         cacheKey: key,
@@ -213,12 +230,13 @@ export function getCachedNews(area?: string, uf?: string): { data: NewsItem[]; a
 }
 
 /**
- * Salva notícias no cache SQLite e atualiza o timestamp de sincronização.
+ * Salva notícias no cache SQLite com anonimização prévia e atualiza o timestamp de sincronização.
  */
-export function saveNewsToCache(items: NewsItem[]): void {
+export function saveNewsToCache(rawItems: NewsItem[]): void {
   try {
     const db = getDb()
     const nowIso = new Date().toISOString()
+    const items = rawItems.map((item) => anonymizeNewsItemForStorage(item))
 
     for (const item of items) {
       db.insert(noticiasTable)

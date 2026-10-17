@@ -64,11 +64,14 @@ export function DossierSummaryCard({
 
         {/* Coluna 2 (6 cols): Título em Newsreader, Resumo & Micro-chips de Métricas */}
         <div className="lg:col-span-6 space-y-1.5">
-          <h3
-            onClick={() => onOpenDossier(dossier)}
-            className="font-display text-lg sm:text-xl text-[#FFFCF2] group-hover:text-[#E5D5B3] transition-colors leading-snug cursor-pointer"
-          >
-            {dossier.tituloConcurso}
+          <h3 className="font-display text-lg sm:text-xl leading-snug">
+            <button
+              type="button"
+              onClick={() => onOpenDossier(dossier)}
+              className="text-left text-[#FFFCF2] group-hover:text-[#E5D5B3] transition-colors cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#748B7B]"
+            >
+              {dossier.tituloConcurso}
+            </button>
           </h3>
 
           <p className="font-body-sm text-body-sm text-[#BDBAB5] leading-relaxed line-clamp-2">

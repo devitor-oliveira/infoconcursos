@@ -7,12 +7,30 @@ export interface SearchResultResponse {
   data: ConcursoDossier[]
   atualizadoEm: string
   fromCache: boolean
+  validationWarning?: string | null
 }
 
 export interface NewsResultResponse {
   data: NewsItem[]
   atualizadoEm: string
   fromCache: boolean
+}
+
+export interface PrivacySecurityStatus {
+  database: {
+    encryptedAtRest: boolean
+    algorithm: 'AES-256-GCM'
+    keyManagement: 'OS_KEYCHAIN_DPAPI' | 'LOCAL_SCRYPT_KDF'
+  }
+  network: {
+    proxyEnabled: boolean
+    proxyUrl: string
+    maskedProxyUrl: string
+    rotateUserAgent: boolean
+    sendGlobalPrivacyControl: boolean
+    activeDispatcherType: 'ELECTRON_NATIVE_PROXY' | 'DIRECT_PRIVACY_HARDENED' | 'PROXY_AGENT_UNDICI'
+    encryptionAlgorithm: 'AES-256-GCM'
+  }
 }
 
 export interface InfoConcursosApi {
@@ -30,6 +48,18 @@ export interface InfoConcursosApi {
   toggleMonitorConcurso: (dossier: ConcursoDossier) => Promise<{ monitored: boolean; items: MonitoringItem[] }>
   removeMonitoredConcurso: (id: string) => Promise<MonitoringItem[]>
   checkUpdatesNow: () => Promise<{ updatedCount: number; items: MonitoringItem[] }>
+  clearLocalData: () => Promise<{ clearedHistory: boolean; clearedCache: boolean; clearedAt: string }>
+  getPrivacyStatus: () => Promise<PrivacySecurityStatus>
+  configureNetworkPrivacy: (config: {
+    proxyEnabled?: boolean
+    proxyUrl?: string
+    rotateUserAgent?: boolean
+    sendGlobalPrivacyControl?: boolean
+  }) => Promise<{
+    success: boolean
+    error?: string
+    status: PrivacySecurityStatus['network']
+  }>
 }
 
 const api: InfoConcursosApi = {
@@ -41,7 +71,10 @@ const api: InfoConcursosApi = {
   getMonitoredConcursos: () => ipcRenderer.invoke('monitor:list'),
   toggleMonitorConcurso: (dossier: ConcursoDossier) => ipcRenderer.invoke('monitor:toggle', dossier),
   removeMonitoredConcurso: (id: string) => ipcRenderer.invoke('monitor:remove', id),
-  checkUpdatesNow: () => ipcRenderer.invoke('monitor:checkNow')
+  checkUpdatesNow: () => ipcRenderer.invoke('monitor:checkNow'),
+  clearLocalData: () => ipcRenderer.invoke('privacy:clearLocalData'),
+  getPrivacyStatus: () => ipcRenderer.invoke('privacy:getStatus'),
+  configureNetworkPrivacy: (config) => ipcRenderer.invoke('privacy:configureNetwork', config)
 }
 
 if (process.contextIsolated) {

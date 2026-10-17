@@ -4,7 +4,7 @@ import { parsePciHtml } from '../main/modules/search/portals-concrete.scraper'
 import { parseConsulplanHtml } from '../main/modules/search/bancas-concrete.scraper'
 import { parseGranCursosRssXml } from '../main/modules/news/sitemap-rss.scraper'
 
-describe('Fase 6: Resiliência de Rede, Timeouts e Tratamento de Erros HTTP', () => {
+describe('HttpClient (Resiliência de Rede, Timeouts e Proteção de Memória)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })

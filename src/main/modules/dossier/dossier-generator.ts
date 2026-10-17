@@ -14,10 +14,15 @@ import {
 import { scrapeBancasConcreteAll } from '../search/bancas-concrete.scraper'
 import { searchGoogleNewsRss } from '../news/sitemap-rss.scraper'
 import { generateCanonicalId } from '../search/id-generator'
+import { resolveOfficialDossierLinks } from '../search/url-resolver'
 import {
   getCachedSearchResults,
   saveSearchResultsToCache
 } from '../search/search-cache-service'
+import {
+  validateAndSanitizeSearchFilter,
+  anonymizeDossierForStorage
+} from '../../../shared/utils/anonymizer'
 
 function normalizeSearchText(str: string): string {
   return str
@@ -64,21 +69,36 @@ function convertSingleSearchResultToDossier(
   const orgao = r.title.split(/[-–—:]/)[0]?.trim().slice(0, 50) || filter.termoLivre || 'Órgão em Apuração'
   const id = generateCanonicalId(r.url, 'apuracao')
 
-  const linkRef: ReferenceLink = {
-    id: `ref-${id}`,
-    titulo: r.title,
-    url: r.url,
-    fonte: r.sourceDomain,
-    tipo: r.url.endsWith('.pdf')
-      ? 'EDITAL_PDF'
-      : r.sourceDomain.includes('gov.br') || r.sourceDomain.includes('jus.br')
-        ? 'PORTAL_OFICIAL'
-        : 'NOTICIA'
-  }
+  const isOfficialPortal = r.url.endsWith('.pdf') || r.sourceDomain.includes('gov.br') || r.sourceDomain.includes('jus.br')
+
+  const officialResolution = resolveOfficialDossierLinks({
+    orgao,
+    rawTitle: r.title,
+    bancaNameHint: detected.bancaDetectada?.nome,
+    sourceUrl: r.url,
+    sourceFonte: r.sourceDomain,
+    isDirectBancaEdital: isOfficialPortal
+  })
+
+  const bancaFinal = officialResolution.bancaIdentificada
+    ? {
+        nome: officialResolution.bancaIdentificada.name,
+        situacao: (detected.status === 'INSCRICOES_ABERTAS' ||
+        detected.status === 'EDITAL_PUBLICADO' ||
+        detected.status === 'BANCA_DEFINIDA'
+          ? 'CONTRATADA'
+          : 'COTADA_OU_HISTORICO') as 'CONTRATADA' | 'COTADA_OU_HISTORICO',
+        observacao: `Banca organizadora ${officialResolution.bancaIdentificada.name} identificada nas fontes e cruzada com o cadastro oficial.`
+      }
+    : detected.bancaDetectada || {
+        nome: 'A definir pelo órgão',
+        situacao: 'A_DEFINIR' as const,
+        observacao: 'Aguardando publicação de portaria ou processo de contratação da banca examinadora.'
+      }
 
   return {
     id,
-    urlCanonica: r.url,
+    urlCanonica: officialResolution.urlCanonica,
     termoOriginal: filter.termoLivre || orgao,
     orgao,
     tituloConcurso: r.title,
@@ -87,20 +107,16 @@ function convertSingleSearchResultToDossier(
     status: detected.status,
     statusLabel: detected.statusLabel,
     resumoGeral: r.snippet,
-    tipoRegistro: 'NOTICIA_APURACAO',
+    tipoRegistro: isOfficialPortal ? 'EDITAL_OFICIAL' : 'NOTICIA_APURACAO',
     prazoInscricao: timeline.periodoInscricoes || 'A definir no edital oficial',
     escolaridade: 'Consulte os requisitos específicos do cargo',
     numeroVagas: 'Conforme publicação oficial',
     salarioMaximo: 'Não especificado na publicação',
-    banca: detected.bancaDetectada || {
-      nome: 'A definir pelo órgão',
-      situacao: 'A_DEFINIR',
-      observacao: 'Aguardando publicação de portaria ou processo de contratação da banca examinadora.'
-    },
+    banca: bancaFinal,
     cronograma: timeline,
     cargosPrevistos: [],
     materiasRecomendadas: matchRecommendedSubjects(area, [orgao, r.title]),
-    linksReferencia: [linkRef],
+    linksReferencia: officialResolution.linksReferencia,
     atualizadoEm: new Date().toISOString()
   }
 }
@@ -109,9 +125,16 @@ function convertSingleSearchResultToDossier(
  * Orquestrador de busca e geração de dossiês com arquitetura Cache-First.
  */
 export async function generateConcursoDossiers(
-  filter: SearchFilter,
+  rawFilter: SearchFilter,
   options: { skipNetwork?: boolean; forceRefresh?: boolean } = {}
 ): Promise<ConcursoDossier[]> {
+  const { sanitizedFilter: filter, blockedPersonalData } = validateAndSanitizeSearchFilter(rawFilter)
+
+  // Se o usuário digitou apenas um dado pessoal (ex: CPF puro, e-mail), bloqueia imediatamente sem consultar rede/banco
+  if (blockedPersonalData && !filter.termoLivre) {
+    return []
+  }
+
   // 1. Se NÃO for forceRefresh, consulta prioritariamente o cache SQLite
   if (!options.forceRefresh) {
     const cached = getCachedSearchResults(filter)
@@ -166,9 +189,31 @@ export async function generateConcursoDossiers(
 
     for (const gn of gnewsList.slice(0, 5)) {
       const gnewsId = generateCanonicalId(gn.url, 'gnews')
+      const detected = detectConcursoStatusAndBanca([gn.titulo, gn.resumo, gn.orgaoRelacionado])
+      const officialResolution = resolveOfficialDossierLinks({
+        orgao: gn.orgaoRelacionado,
+        rawTitle: gn.titulo,
+        bancaNameHint: detected.bancaDetectada?.nome,
+        sourceUrl: gn.url,
+        sourceFonte: gn.portalFonte,
+        isDirectBancaEdital: false
+      })
+
+      const bancaFinal = officialResolution.bancaIdentificada
+        ? {
+            nome: officialResolution.bancaIdentificada.name,
+            situacao: 'COTADA_OU_HISTORICO' as const,
+            observacao: `Banca organizadora ${officialResolution.bancaIdentificada.name} referenciada nas matérias e confirmada no cadastro oficial.`
+          }
+        : detected.bancaDetectada || {
+            nome: 'Consultar publicação',
+            situacao: 'A_DEFINIR' as const,
+            observacao: `Notícia apurada e veiculada por ${gn.portalFonte}.`
+          }
+
       newsDossiers.push({
         id: gnewsId,
-        urlCanonica: gn.url,
+        urlCanonica: officialResolution.urlCanonica,
         termoOriginal: gn.orgaoRelacionado,
         orgao: gn.orgaoRelacionado,
         tituloConcurso: gn.titulo,
@@ -181,27 +226,14 @@ export async function generateConcursoDossiers(
         prazoInscricao: 'Consultar portal de notícias',
         numeroVagas: 'Consulte apuração',
         salarioMaximo: 'Não especificado na publicação',
-        banca: {
-          nome: 'Consultar publicação',
-          situacao: 'A_DEFINIR',
-          observacao: `Notícia publicada por ${gn.portalFonte}.`
-        },
+        banca: bancaFinal,
         cronograma: {
           previsaoEdital: 'Acompanhamento jornalístico em andamento',
           ultimaMovimentacao: `Matéria veiculada em ${new Date(gn.dataPublicacao).toLocaleDateString('pt-BR')}.`
         },
         cargosPrevistos: [],
         materiasRecomendadas: matchRecommendedSubjects(gn.area, [gn.orgaoRelacionado, gn.titulo]),
-        linksReferencia: [
-          {
-            id: `link-${gnewsId}`,
-            titulo: gn.titulo,
-            url: gn.url,
-            fonte: gn.portalFonte,
-            tipo: 'NOTICIA',
-            dataPublicacao: gn.dataPublicacao
-          }
-        ],
+        linksReferencia: officialResolution.linksReferencia,
         atualizadoEm: new Date().toISOString()
       })
     }
@@ -255,7 +287,7 @@ export async function generateConcursoDossiers(
     return orderA - orderB
   })
 
-  const finalDossiers = uniqueDossiers.slice(0, 35)
+  const finalDossiers = uniqueDossiers.slice(0, 35).map((d) => anonymizeDossierForStorage(d))
 
   // 4. Salva os resultados no SQLite para que buscas futuras venham do cache instantaneamente
   saveSearchResultsToCache(filter, finalDossiers)

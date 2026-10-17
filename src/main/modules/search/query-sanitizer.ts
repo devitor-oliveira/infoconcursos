@@ -1,5 +1,10 @@
 import { SearchFilter, SanitizedQueryResult } from '../../../shared/types/search'
 import { ConcursoArea } from '../../../shared/types/concurso'
+import { validateAndSanitizeSearchFilter } from '../../../shared/utils/anonymizer'
+import { findBancaByQueryOrName } from './url-resolver'
+
+/** Limite técnico seguro abaixo do teto de 500 caracteres do DuckDuckGo HTML/Lite */
+const MAX_DDG_QUERY_LENGTH = 480
 
 const AREA_KEYWORDS_MAP: Record<ConcursoArea, string[]> = {
   TODOS: ['concurso público', 'edital', 'previsto', 'autorizado'],
@@ -31,53 +36,70 @@ const OBSOLETE_YEAR_PATTERNS = [
   /\bgabarito\s+oficial\s+(2018|2019|2020|2021|2022|2023)\b/i
 ]
 
-const BANCA_DOMAINS = [
-  'fundep.selecao.net.br',
-  'gestaodeconcursos.com.br',
-  'novo.ibgpconcursos.com.br',
-  'ibgpconcursos.com.br',
-  'concurso.fundacaocefetminas.org.br',
-  'fundacaocefetminas.org.br',
-  'institutoconsulplan.org.br',
-  'fumarc.com.br',
-  'ibfc.selecao.net.br',
-  'ibfc.org.br',
-  'concursos.access.org.br',
-  'access.org.br',
-  'portal.concursos.idecan.org.br',
-  'idecan.org.br',
-  'portal.ibade.selecao.site',
-  'ibade.org.br',
-  'conhecimento.fgv.br',
-  'cebraspe.org.br',
-  'concursosfcc.com.br',
-  'cesgranrio.org.br',
-  'vunesp.com.br',
-  'selecon.org.br',
-  'selecon.selecao.net.br',
-  'fundatec.org.br',
-  'iades.com.br',
-  'jcmconcursos.com.br',
-  'ibamconcursos.org.br'
-]
+/**
+ * Seleciona até 5 domínios prioritários para o operador booleano site:
+ * respeitando o limite sintático de agrupamento OR do motor DuckDuckGo/Bing.
+ */
+function selectContextualBancaDomains(cleanTerm: string, area?: ConcursoArea, uf?: string): string[] {
+  const matchedBanca = findBancaByQueryOrName(cleanTerm)
+  if (matchedBanca) {
+    return Array.from(new Set([matchedBanca.domain, 'gov.br', 'jus.br'])).slice(0, 5)
+  }
 
-const PORTAL_DOMAINS = [
+  if (uf === 'MG' || /\b(mg|minas\s+gerais|bh|belo\s+horizonte)\b/i.test(cleanTerm)) {
+    return [
+      'gestaodeconcursos.com.br',
+      'fumarc.com.br',
+      'ibgpconcursos.com.br',
+      'mg.gov.br',
+      'jus.br'
+    ]
+  }
+
+  if (area === 'TRIBUNAIS') {
+    return [
+      'jus.br',
+      'conhecimento.fgv.br',
+      'cebraspe.org.br',
+      'concursosfcc.com.br',
+      'vunesp.com.br'
+    ]
+  }
+
+  if (area === 'BANCARIA') {
+    return [
+      'cesgranrio.org.br',
+      'cebraspe.org.br',
+      'concursosfcc.com.br',
+      'gov.br'
+    ]
+  }
+
+  return [
+    'gov.br',
+    'jus.br',
+    'cebraspe.org.br',
+    'conhecimento.fgv.br',
+    'concursosfcc.com.br'
+  ]
+}
+
+const CORE_PORTAL_DOMAINS = [
   'pciconcursos.com.br',
   'acheconcursos.com.br',
   'concursosnobrasil.com',
-  'folha.qconcursos.com',
-  'estrategiaconcursos.com.br',
-  'blog.grancursosonline.com.br'
+  'folha.qconcursos.com'
 ]
 
 /**
- * Constrói silenciosamente a consulta otimizada com âncoras temporais (2025/2026)
- * e bloqueio de editais retroativos/encerrados, sem jamais expor sintaxe técnica na UI.
+ * Constrói silenciosamente a consulta otimizada com âncoras temporais (2025/2026),
+ * validação de filtros, anonimização de dados pessoais (LGPD) e bloqueio de editais retroativos.
  */
 export function buildSanitizedSearchQuery(
-  filter: SearchFilter,
+  rawFilter: SearchFilter,
   referenceYear: number = new Date().getFullYear()
 ): SanitizedQueryResult {
+  const { sanitizedFilter: filter } = validateAndSanitizeSearchFilter(rawFilter)
   const currentYear = referenceYear >= 2025 ? referenceYear : 2026
   const previousYear = currentYear - 1
   const appliedYearAnchors = [currentYear, previousYear]
@@ -113,17 +135,28 @@ export function buildSanitizedSearchQuery(
   parts.push(`(${currentYear} OR ${previousYear})`)
   parts.push(...OBSOLETE_EXCLUSION_TERMS.slice(0, 4))
 
-  // Constrói Dork especializada para as 19 Bancas Organizadoras e órgãos oficiais
-  const bancaSiteClauses = BANCA_DOMAINS.map((d) => `site:${d}`).join(' OR ')
-  const baseTerm = isSpecific ? `"${cleanTerm}"` : filter.area && filter.area !== 'TODOS' ? filter.area : 'concurso'
-  const bancasDorkQuery = `(${baseTerm}) ("edital" OR "inscrições" OR "concurso") (${bancaSiteClauses} OR site:gov.br OR site:jus.br) (${currentYear} OR ${previousYear})`
+  // Constrói Dork enxuta (máx 5 cláusulas site: e < 480 chars) para Bancas e Diários Oficiais
+  const selectedBancaDomains = selectContextualBancaDomains(cleanTerm, filter.area, filter.uf)
+  const bancaSiteClauses = selectedBancaDomains.map((d) => `site:${d}`).join(' OR ')
+  const baseTerm = isSpecific
+    ? `"${cleanTerm}"`
+    : filter.area && filter.area !== 'TODOS'
+      ? AREA_KEYWORDS_MAP[filter.area][0]
+      : 'concurso público'
+  const bancasDorkQuery = `concurso ${baseTerm} ("edital" OR "inscrições" OR "autorizado") (${bancaSiteClauses}) (${currentYear} OR ${previousYear})`.slice(
+    0,
+    MAX_DDG_QUERY_LENGTH
+  )
 
-  // Constrói Dork especializada para os 6 Portais de Monitoramento
-  const portalSiteClauses = PORTAL_DOMAINS.map((d) => `site:${d}`).join(' OR ')
-  const portaisDorkQuery = `concurso (${baseTerm}) ("edital" OR "autorizado" OR "comissão" OR "banca" OR "vagas") (${portalSiteClauses}) (${currentYear} OR ${previousYear})`
+  // Constrói Dork enxuta (4 portais primários) para cobertura especializada
+  const portalSiteClauses = CORE_PORTAL_DOMAINS.map((d) => `site:${d}`).join(' OR ')
+  const portaisDorkQuery = `concurso ${baseTerm} ("edital" OR "autorizado" OR "comissão" OR "vagas") (${portalSiteClauses}) (${currentYear} OR ${previousYear})`.slice(
+    0,
+    MAX_DDG_QUERY_LENGTH
+  )
 
   return {
-    internalQuery: parts.join(' '),
+    internalQuery: parts.join(' ').slice(0, MAX_DDG_QUERY_LENGTH),
     bancasDorkQuery,
     portaisDorkQuery,
     appliedYearAnchors,

@@ -11,12 +11,15 @@ import {
   Clock,
   Layers
 } from 'lucide-react'
-import { PORTAIS_REGISTRY, BANCAS_REGISTRY, BancaSource } from '../../../shared/constants/sources-registry'
-import { Button, Heading, Text, Badge } from '../components/ds'
+import { PORTAIS_REGISTRY, BANCAS_REGISTRY } from '../../../shared/constants/sources-registry'
+import { Button, Badge } from '../components/ds'
+import { useAppStore } from '../stores/monitoringStore'
 
 export function SettingsPage(): React.JSX.Element {
+  const { clearLocalCacheAndHistory, setActiveTab } = useAppStore()
   const [bancaCategory, setBancaCategory] = useState<string>('TODAS')
   const [cacheClearMessage, setCacheClearMessage] = useState<string | null>(null)
+  const [isClearing, setIsClearing] = useState<boolean>(false)
 
   const filteredBancas = BANCAS_REGISTRY.filter((b) => {
     if (bancaCategory === 'TODAS') return true
@@ -38,10 +41,16 @@ export function SettingsPage(): React.JSX.Element {
     'fundatec'
   ])
 
-  const handleClearCache = (): void => {
-    // Força atualização visual
-    setCacheClearMessage('Cache local reiniciado. Próximas buscas consultarão fontes atualizadas.')
-    setTimeout(() => setCacheClearMessage(null), 5000)
+  const handleClearCache = async (): Promise<void> => {
+    setIsClearing(true)
+    const res = await clearLocalCacheAndHistory()
+    setIsClearing(false)
+    if (res) {
+      setCacheClearMessage(
+        `Histórico de buscas e cache local expurgados fisicamente do SQLite (VACUUM + AES-256-GCM) às ${new Date(res.clearedAt).toLocaleTimeString('pt-BR')}.`
+      )
+      setTimeout(() => setCacheClearMessage(null), 6000)
+    }
   }
 
   return (
@@ -224,22 +233,23 @@ export function SettingsPage(): React.JSX.Element {
             <div className="flex items-center justify-between text-xs text-[#E5D5B3]">
               <span className="font-medium">Estado do Armazenamento:</span>
               <span className="text-[#748B7B] font-semibold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Ativo &amp; Persistido
+                <CheckCircle2 className="w-3.5 h-3.5" /> Criptografado (AES-256-GCM)
               </span>
             </div>
             <div className="flex items-center justify-between text-xs text-[#BDBAB5]">
               <span>Políticas Ativas:</span>
-              <span>Timeout 6s • Cap 2MB • Rejeição Binários</span>
+              <span>Zero PII • Timeout 6s • Cap 2MB</span>
             </div>
             <div className="pt-2 border-t border-[#E5D5B3]/10 flex justify-end">
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
+                isLoading={isClearing}
                 onClick={handleClearCache}
                 leftIcon={<Trash2 className="w-3.5 h-3.5 text-[#E5D5B3]" />}
               >
-                Limpar Cache de Pesquisas
+                Expurgar Cache e Histórico Local
               </Button>
             </div>
           </div>
@@ -247,16 +257,28 @@ export function SettingsPage(): React.JSX.Element {
       </section>
 
       {/* Seção 4: Conformidade Legal & Protocolo de Auditoria */}
-      <section className="bg-[#171617] border border-[#607466]/30 rounded-xl p-5 flex items-start gap-3.5">
-        <ShieldCheck className="w-6 h-6 text-[#748B7B] shrink-0 mt-0.5" />
-        <div className="space-y-1 text-xs text-[#BDBAB5]">
-          <div className="font-label-md text-sm text-[#FFFCF2] font-semibold">
-            Conformidade com a Legislação Brasileira (LGPD &amp; LAI)
+      <section className="bg-[#171617] border border-[#607466]/30 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5 max-w-4xl">
+          <ShieldCheck className="w-6 h-6 text-[#748B7B] shrink-0 mt-0.5" />
+          <div className="space-y-1 text-xs text-[#BDBAB5]">
+            <div className="font-label-md text-sm text-[#FFFCF2] font-semibold">
+              Conformidade com a Legislação Brasileira (LGPD &amp; LAI)
+            </div>
+            <p className="leading-relaxed">
+              As informações de concursos públicos, editais, remunerações e prazos coletadas por esta aplicação constituem atos administrativos oficiais e dados públicos de órgãos estatais (Art. 37 da Constituição Federal e Lei nº 12.527/2011). O banco local é cifrado em repouso via AES-256-GCM e conta com anonimização ativa contra dados pessoais (Lei nº 13.709/2018).
+            </p>
           </div>
-          <p className="leading-relaxed">
-            As informações de concursos públicos, editais, remunerações e prazos coletadas por esta aplicação constituem atos administrativos oficiais e dados públicos de órgãos estatais (Art. 37 da Constituição Federal e Lei de Acesso à Informação — Lei nº 12.527/2011). Não há coleta nem tratamento de dados pessoais de pessoas naturais privadas protegidos pela Lei Geral de Proteção de Dados (Lei nº 13.709/2018).
-          </p>
         </div>
+
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          onClick={() => setActiveTab('PRIVACIDADE')}
+          leftIcon={<ShieldCheck className="w-4 h-4" />}
+        >
+          Política de Privacidade &amp; Proxy
+        </Button>
       </section>
     </div>
   )

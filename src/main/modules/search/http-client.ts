@@ -1,21 +1,16 @@
+import { buildPrivacyPreservingHeaders } from '../privacy/network-privacy'
+
 export interface FetchResult {
   html: string
   statusCode: number
 }
 
-const CUSTOM_USER_AGENT =
-  'InfoConcursos/1.0 (Desktop; Open Source Concursos Research; +https://github.com/infoconcursos)'
-
-const DEFAULT_HEADERS: Record<string, string> = {
-  'User-Agent': CUSTOM_USER_AGENT,
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8'
-}
-
 const MAX_BYTES = 2 * 1024 * 1024 // 2 Megabytes
 
 /**
- * Executa requisição HTTP segura com timeout garantido em finally, limite de bytes e tratamento de erros.
+ * Executa requisição HTTP segura com timeout garantido em finally, limite de bytes,
+ * cabeçalhos de privacidade (Sec-GPC, DNT, no-referrer, sem cookies) e roteamento seguro
+ * via proxy nativo do Electron/Chromium (session.defaultSession.setProxy).
  */
 export async function fetchHtmlWithSafety(
   url: string,
@@ -26,13 +21,14 @@ export async function fetchHtmlWithSafety(
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const res = await fetch(url, {
-      headers: {
-        ...DEFAULT_HEADERS,
-        ...(options.headers || {})
-      },
+    const requestInit: RequestInit = {
+      headers: buildPrivacyPreservingHeaders(options.headers),
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
       signal: controller.signal
-    })
+    }
+
+    const res = await fetch(url, requestInit)
 
     if (!res.ok) {
       return null

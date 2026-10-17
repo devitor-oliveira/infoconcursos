@@ -12,6 +12,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "types": ["@testing-library/jest-dom/vitest"],
     "baseUrl": ".",
     "paths": {
       "@renderer/*": ["src/renderer/src/*"],
@@ -21,6 +22,7 @@
   "include": [
     "src/renderer/src/**/*",
     "src/preload/*.d.ts",
-    "src/shared/**/*"
+    "src/shared/**/*",
+    "src/test/ui/**/*"
   ]
 }

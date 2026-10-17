@@ -2,9 +2,18 @@ import { create } from 'zustand'
 import { ConcursoDossier, ConcursoArea } from '../../../shared/types/concurso'
 import { SearchFilter } from '../../../shared/types/search'
 import { NewsItem, MonitoringItem } from '../../../shared/types/news'
+import { validateAndSanitizeSearchFilter } from '../../../shared/utils/anonymizer'
+
+export type AppTab =
+  | 'DESCOBERTA'
+  | 'NOTICIAS'
+  | 'ACOMPANHAMENTOS'
+  | 'DOSSIE'
+  | 'CONFIGURACOES'
+  | 'PRIVACIDADE'
 
 interface AppState {
-  activeTab: 'DESCOBERTA' | 'NOTICIAS' | 'ACOMPANHAMENTOS' | 'DOSSIE' | 'CONFIGURACOES'
+  activeTab: AppTab
   filter: SearchFilter
   dossiers: ConcursoDossier[]
   selectedDossierIndex: number
@@ -16,6 +25,7 @@ interface AppState {
   isLoadingNews: boolean
   isCheckingUpdates: boolean
   lastUpdateMessage: string | null
+  searchValidationWarning: string | null
 
   // Metadados de Cache
   searchAtualizadoEm: string | null
@@ -23,8 +33,9 @@ interface AppState {
   newsAtualizadoEm: string | null
   newsFromCache: boolean
 
-  setActiveTab: (tab: 'DESCOBERTA' | 'NOTICIAS' | 'ACOMPANHAMENTOS' | 'DOSSIE' | 'CONFIGURACOES') => void
+  setActiveTab: (tab: AppTab) => void
   setFilter: (partial: Partial<SearchFilter>) => void
+  setSearchValidationWarning: (msg: string | null) => void
   selectDossierIndex: (idx: number) => void
   openDossierPage: (dossier: ConcursoDossier) => void
   goBackFromDossier: () => void
@@ -35,7 +46,13 @@ interface AppState {
   removeMonitored: (id: string) => Promise<void>
   triggerCheckUpdatesNow: () => Promise<void>
   openDossierFromMonitor: (item: MonitoringItem) => void
+  clearLocalCacheAndHistory: () => Promise<{ clearedAt: string } | null>
 }
+
+// Contadores monotônicos de geração e impressão digital em voo para evitar Stale Responses (Dan Abramov / TkDodo pattern)
+let latestSearchRequestId = 0
+let inFlightSearchSignature: string | null = null
+let latestNewsRequestId = 0
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeTab: 'NOTICIAS',
@@ -55,6 +72,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isLoadingNews: false,
   isCheckingUpdates: false,
   lastUpdateMessage: null,
+  searchValidationWarning: null,
 
   searchAtualizadoEm: null,
   searchFromCache: false,
@@ -72,16 +90,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setFilter: (partial) =>
     set((state) => ({
-      filter: { ...state.filter, ...partial }
+      filter: { ...state.filter, ...partial },
+      // Limpa erro de validação imediatamente ao editar (Validation Event Timing Matrix)
+      searchValidationWarning: null
     })),
+
+  setSearchValidationWarning: (msg) => set({ searchValidationWarning: msg }),
 
   selectDossierIndex: (idx) => set({ selectedDossierIndex: idx }),
 
   openDossierPage: (dossier) => {
     const currentTab = get().activeTab
-    const prev = (currentTab === 'DOSSIE' || currentTab === 'CONFIGURACOES')
-      ? get().previousTab
-      : currentTab
+    const prev =
+      currentTab === 'DOSSIE' || currentTab === 'CONFIGURACOES' || currentTab === 'PRIVACIDADE'
+        ? get().previousTab
+        : currentTab
     set({
       activeDossier: dossier,
       previousTab: prev,
@@ -94,30 +117,70 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   executeSearch: async (customFilter, options) => {
-    const activeFilter = customFilter || get().filter
-    if (customFilter) {
-      set({ filter: activeFilter })
+    const rawFilter = customFilter || get().filter
+    const validation = validateAndSanitizeSearchFilter(rawFilter)
+    const activeFilter = validation.sanitizedFilter
+    const querySignature = JSON.stringify({ activeFilter, forceRefresh: Boolean(options?.forceRefresh) })
+
+    // 1. Deduplicação em voo (In-Flight Request Deduplication): bloqueia duplo-clique idêntico concorrente
+    if (get().isLoadingSearch && inFlightSearchSignature === querySignature) {
+      return
     }
-    set({ isLoadingSearch: true, activeTab: 'DESCOBERTA' })
+
+    // 2. Controle monotônico de geração (Stale Response Eviction): se o usuário mudou o filtro, invalida respostas antigas
+    const requestId = ++latestSearchRequestId
+    inFlightSearchSignature = querySignature
+
+    set({
+      filter: activeFilter,
+      searchValidationWarning: validation.validationMessage,
+      activeTab: 'DESCOBERTA'
+    })
+
+    // Se o usuário tentou pesquisar apenas um dado pessoal (ex: CPF ou e-mail), bloqueia antes da chamada
+    if (validation.blockedPersonalData && !activeFilter.termoLivre) {
+      inFlightSearchSignature = null
+      set({
+        dossiers: [],
+        isLoadingSearch: false
+      })
+      return
+    }
+
+    set({ isLoadingSearch: true })
     try {
       const res = await window.api.searchConcursos(activeFilter, options)
+      // Descarta silenciosamente resposta obsoleta se uma busca mais recente já foi disparada
+      if (requestId !== latestSearchRequestId) {
+        return
+      }
+      inFlightSearchSignature = null
       set({
         dossiers: res.data,
         searchAtualizadoEm: res.atualizadoEm,
         searchFromCache: res.fromCache,
+        searchValidationWarning: res.validationWarning || validation.validationMessage,
         selectedDossierIndex: 0,
         isLoadingSearch: false
       })
     } catch (error) {
+      if (requestId !== latestSearchRequestId) {
+        return
+      }
+      inFlightSearchSignature = null
       console.error('Erro na busca de concursos:', error)
       set({ isLoadingSearch: false })
     }
   },
 
   loadRecentNews: async (area, uf, options) => {
+    const requestId = ++latestNewsRequestId
     set({ isLoadingNews: true })
     try {
       const res = await window.api.getRecentNews(area, uf, options)
+      if (requestId !== latestNewsRequestId) {
+        return
+      }
       set({
         news: res.data,
         newsAtualizadoEm: res.atualizadoEm,
@@ -125,6 +188,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         isLoadingNews: false
       })
     } catch (error) {
+      if (requestId !== latestNewsRequestId) {
+        return
+      }
       console.error('Erro ao carregar notícias recentes:', error)
       set({ isLoadingNews: false })
     }
@@ -166,6 +232,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   triggerCheckUpdatesNow: async () => {
+    if (get().isCheckingUpdates) {
+      return
+    }
     set({ isCheckingUpdates: true })
     try {
       const res = await window.api.checkUpdatesNow()
@@ -193,6 +262,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       })
     } catch (err) {
       console.error('Erro ao abrir dossiê pelo monitor:', err)
+    }
+  },
+
+  clearLocalCacheAndHistory: async () => {
+    try {
+      const res = await window.api.clearLocalData()
+      set({
+        dossiers: [],
+        searchAtualizadoEm: null,
+        searchFromCache: false,
+        newsFromCache: false,
+        lastUpdateMessage:
+          'Histórico de buscas e cache SQLite expurgados com sucesso (VACUUM + recriptografia AES-256-GCM).'
+      })
+      return { clearedAt: res.clearedAt }
+    } catch (err) {
+      console.error('Erro ao limpar dados locais:', err)
+      return null
     }
   }
 }))

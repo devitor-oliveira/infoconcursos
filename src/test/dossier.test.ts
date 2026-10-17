@@ -8,7 +8,7 @@ import {
   convertConcreteToDossier
 } from '../main/modules/search/portals-concrete.scraper'
 
-describe('Fase 3 - Inteligência do Dossiê, Matérias de Estudo & Extrator de Dados', () => {
+describe('DossierIntelligenceService (Status, Bancas e Matérias Recomendadas)', () => {
   it('deve extrair dados concretos do HTML do PCI Concursos ignorando certames expirados (.ea)', () => {
     const htmlFixture = `
       <div>
