@@ -1,6 +1,6 @@
 {
   "name": "infoconcursos",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Plataforma Desktop de Descoberta, Dossiês de Estudo, Notícias e Monitoramento de Concursos Públicos",
   "main": "./out/main/index.js",
   "author": "InfoConcursos",
@@ -16,10 +16,11 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run typecheck && npm test && electron-vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:win": "npm run build && electron-builder --win"
+    "dist:organize": "node scripts/organize-dist.js",
+    "build:win": "npm run build && electron-builder --win && node scripts/organize-dist.js"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
@@ -34,6 +35,9 @@
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
@@ -43,6 +47,7 @@
     "electron": "^34.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
+    "jsdom": "^30.1.3",
     "postcss": "^8.5.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

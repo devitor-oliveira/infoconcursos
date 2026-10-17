@@ -78,6 +78,12 @@ Com inspiração na estética editorial suíça (*Swiss Monocle*), o aplicativo 
 - Barra superior alinhada ao topo com opção de **fixamento permanente** ou **recolhimento automático**.
 - Quando recolhida, o usuário pode reabri-la encostando o mouse no topo da tela (hover sensor) ou clicando no botão discreto `InfoConcursos ▼` fixado no canto superior esquerdo.
 
+### 6. 🔒 Privacidade & Segurança de Dados (Conformidade LGPD & Criptografia At-Rest)
+- **Criptografia em Repouso (AES-256-GCM):** O arquivo de banco SQLite é cifrado com chave de 256 bits protegida pelo cofre nativo do SO (`safeStorage` / DPAPI / Keychain), com fallback determinístico via KDF `scrypt` (RFC 7914).
+- **Higienização Ativa de PII:** Interceptação automática de CPFs, RGs, e-mails ou nomes antes de buscas externas ou persistência local, evitando vazamentos.
+- **Túnel de Rede Seguro & Anti-Fingerprinting:** Suporte opcional a proxies HTTP/HTTPS/SOCKS via Undici, emissão ativa de `Sec-GPC: 1` e rotação de User-Agent.
+- **Direito de Eliminação Efetiva (Art. 18, VI LGPD):** Botão com 1 clique para expurgo total e definitivo de históricos, caches e termos de pesquisa locais.
+
 ---
 
 ## 🛡️ Diretriz "Zero Fake Data" & Veracidade
@@ -112,7 +118,8 @@ O aplicativo é concebido com base no design editorial moderno (*Swiss Monocle E
 | **Estilização** | [Tailwind CSS 3.4](https://tailwindcss.com/) | Utilitários de estilização atômica e tokens de design system. |
 | **Ícones** | [Lucide React](https://lucide.dev/) | Ícones minimalistas consistentes em SVG. |
 | **Gerenciamento de Estado** | [Zustand](https://github.com/pmndrs/zustand) | Gerenciador de estado leve e determinístico. |
-| **Banco de Dados Local** | [SQLite (sql.js)](https://sql.js.org/) | Persistência local em arquivo relacional com zero dependência de servidor externo. |
+| **Banco de Dados & ORM** | [SQLite (sql.js)](https://sql.js.org/) + [Drizzle ORM](https://orm.drizzle.team/) | Persistência local relacional em WASM com tipagem estática e criptografia AES-256-GCM em repouso. |
+| **Criptografia & Privacidade** | Node.js Crypto + safeStorage + Undici | Cifra de repouso AES-256-GCM, proteção via DPAPI/Keychain e túnel proxy com cabeçalhos Sec-GPC. |
 | **Scraping & Parsers** | [Cheerio](https://cheerio.js.org/) | Parser rápido de DOM HTML/XML com funções puras e determinísticas. |
 | **Testes Automatizados** | [Vitest](https://vitest.dev/) | Framework de testes unitários e de integração com execução em milissegundos. |
 | **Empacotador** | [Electron Builder](https://www.electron.build/) | Geração de instaladores assistidos (NSIS) e executáveis portáteis para Windows. |
@@ -158,15 +165,17 @@ Para compilar a aplicação e gerar os executáveis finais para compartilhamento
 npm run build:win
 ```
 
-Os arquivos serão gerados na pasta `dist/`:
+Os arquivos serão gerados e segregados na pasta `dist/`:
 
-1. **Instalador com Assistente (`NSIS`):**  
-   `dist/InfoConcursos Setup 0.1.0.exe` (~96 MB)  
-   *Instalador completo do Windows com criação de atalhos e desinstalador.*
+1. **Instalador de Produção Oficial (`NSIS`):**  
+   `dist/producao/InfoConcursos Setup 1.0.0.exe` (~96 MB)  
+   *Instalador completo do Windows com assistente, criação de atalhos no Menu Iniciar/Desktop e desinstalador.*
 
-2. **Executável Portátil Único (`Portable`):**  
-   `dist/InfoConcursos 0.1.0.exe` (~96 MB)  
-   *Executável que não requer instalação. Basta baixar e abrir diretamente.*
+2. **Artefatos de Testes e Validação Rápida (`Portable` e `Unpacked`):**  
+   - `dist/testes/InfoConcursos 1.0.0.exe` (~96 MB)  
+     *Executável portátil autônomo sem necessidade de instalação.*  
+   - `dist/testes/win-unpacked/`  
+     *Pasta descompactada para execução direta e testes em ambiente de desenvolvimento.*
 
 ---
 
@@ -184,6 +193,8 @@ Para rodar todos os testes:
 ```bash
 npm test
 ```
+
+> 📖 **Diretrizes e Regras de Testes para Agentes de IA:** Consulte o documento normativo de regras, padrões seminais e boas práticas em [`docs/regras_testes_ia.md`](docs/regras_testes_ia.md).
 
 ---
 
